@@ -223,7 +223,7 @@ int main(int argc, char **argv)
         latest[j] = -1;
     int64_t grand_latest = -1;
     pid_t  grandkid = -1;
-    int    alive = nk, leak_sent = 0, stop_sent = 0, t = 0, naps = 0;
+    int    alive = nk, leak_sent = 0, stop_sent = 0, t = 0, naps = 0, last_t = 0;
     int64_t stop_deadline_usec = 0;
 
     while (alive > 0) {
@@ -291,10 +291,12 @@ int main(int argc, char **argv)
         for (int j = 0; j < nk; j++)
             if (latest[j] > 0) { total += latest[j]; reporters++; }
         if (grand_latest > 0) { total += grand_latest; reporters++; }
-        if (t > 0)
+        if (t > 0 && t != last_t) {
+            last_t = t;
             printf("[sim] t=%ds alive=%d/%d reported=%d total=%lldMB leak=%s\n",
                    t, alive, nk, reporters, (long long)total,
                    leak_sent ? "on" : (o.leak_mb_s > 0 ? "off" : "n/a"));
+        }
     }
 
     /* Final blocking reap for anyone the WNOHANG loop missed. */
