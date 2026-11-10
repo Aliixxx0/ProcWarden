@@ -75,9 +75,38 @@ runs in the phase checklist.
 
 ---
 
-## Side notes on System V limits (Rule 4, measured in Phase 0)
+## DEV-003 — `ps -o rss` under-reports dirty-but-cold memory (found in Phase 2)
+
+**Spec (docs/BUILD_PROMPT.md, Phase 2):** simulator behaviour is accepted
+"as checked with `ps -o pid,ppid,pgid,rss,command`", implying RSS reflects
+the touched (dirty) memory.
+
+**Observed:** On macOS 26.5.2, a child that has dirtied tens of MB (one
+write per 4096-byte page, never freed) still shows an `rss` of only a few
+hundred KB in `ps`. The kernel compresses dirty pages that are not
+re-accessed, and compressed pages leave the resident set. The memory is
+real and is accounted in `ri_phys_footprint` (it includes compressed
+pages), which is exactly why CLAUDE.md Rule 4 fixes footprint as the
+metric and RSS only as the upper bound.
+
+**Fix (smallest possible):** the scenario check uses a modest RSS floor
+(> 300 KB, i.e. "process alive with resident pages") and treats the
+simulator's own per-second pipe reports (self-reported allocated MB) as
+the growth evidence. From Phase 3 on, `proc_pid_rusage(RUSAGE_INFO_V2)`
+gives the true footprint. No redesign; the [footprint, RSS] range
+showing the gap is itself a teaching point of the proposal.
+
+---
+
 
 On the team Macs: `msg_qbytes` = **2048 bytes**, so with our ≤ 256-byte
 messages roughly 8 messages can be in flight; `kern.sysv.shmmax` =
 **4194304 bytes** (4 MB), so the status table (Phase 1) must stay well
 under that — it does, by design (< 1 MB).
+
+## Side notes on System V limits (Rule 4, measured in Phase 0)
+
+On the team Macs: `msg_qbytes` = **2048 bytes**, so with our ≤ 256-byte
+messages roughly 8 messages can be in flight; `kern.sysv.shmmax` =
+**4194304 bytes** (4 MB), so the status table (Phase 1) fits comfortably
+(it is 47,720 bytes).

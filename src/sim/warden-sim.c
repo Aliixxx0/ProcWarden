@@ -223,8 +223,11 @@ int main(int argc, char **argv)
         latest[j] = -1;
     int64_t grand_latest = -1;
     pid_t  grandkid = -1;
-    int    alive = nk, leak_sent = 0, stop_sent = 0, t = 0, naps = 0, last_t = 0;
+    int    alive = nk, leak_sent = 0, stop_sent = 0, t = 0, last_t = 0;
     int64_t stop_deadline_usec = 0;
+    /* Ticks are wall-clock driven: nanosleep(100ms) can overshoot for
+     * background processes, so counting naps would drift. */
+    const int64_t start_usec = now_usec();
 
     while (alive > 0) {
         if (g_stop && !stop_sent) {
@@ -238,8 +241,7 @@ int main(int argc, char **argv)
         }
 
         nap_100ms();
-        if (++naps % 10 == 0)
-            t++;
+        t = (int)((now_usec() - start_usec) / 1000000);
 
         drain_reports(rp[0], kids, latest, nk, &grandkid, &grand_latest);
 
