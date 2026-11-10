@@ -68,6 +68,10 @@ test:
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; "$$t"; done
 	@echo "ALL TESTS PASSED"
 
+scenario:
+	@set -e; for s in tests/scenarios/*.sh; do echo "== $$s"; sh "$$s"; done
+	@echo "ALL SCENARIOS PASSED"
+
 clean:
 	rm -rf build
 
@@ -78,3 +82,7 @@ $(OD)/%.o: %.c
 $(TD)/test-%: tests/%.c $(COMMON_OBJ)
 	@mkdir -p $(@D)
 	$(CC) $(CF) $< $(COMMON_OBJ) -o $@
+
+$(TD)/warden-sim: $(SIM_SRC) $(COMMON_OBJ)
+	@mkdir -p $(@D)
+	$(CC) $(CF) $(SIM_SRC) $(COMMON_OBJ) -o $@
