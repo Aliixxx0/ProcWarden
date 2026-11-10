@@ -541,6 +541,7 @@ static void print_sysv_limits(void)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IONBF, 0);   /* forked children must never inherit half-flushed buffers */
     printf("== ProcWarden Phase 0 lab check ==\n");
     printf("== lab mechanisms ==\n");
     lab3_fork_waitpid_exit();
