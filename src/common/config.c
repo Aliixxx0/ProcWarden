@@ -42,6 +42,10 @@ static const config_def CONFIG_DEFAULTS[] = {
     { .key = "sample_interval_ms", .t = CFG_INT,  .i = 1000 },
     { .key = "grace_ms",           .t = CFG_INT,  .i = 5000 },
     { .key = "log_level",          .t = CFG_STR,  .s = "info" },
+    /* Phase 1: IPC reply timeout loop — a dead daemon is noticed within
+     * ipc_reply_timeout_ms, polling every ipc_retry_sleep_ms. */
+    { .key = "ipc_reply_timeout_ms", .t = CFG_INT, .i = 2000 },
+    { .key = "ipc_retry_sleep_ms",   .t = CFG_INT, .i = 50 },
 };
 
 typedef struct {
