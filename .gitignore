@@ -1,5 +1,7 @@
 # Build products
 build/
 
+graphify/
+graphify-out/
 # macOS cruft
 .DS_Store
