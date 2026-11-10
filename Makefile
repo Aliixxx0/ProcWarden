@@ -41,17 +41,18 @@ endif
 COMMON_SRC := $(wildcard src/common/*.c)
 COMMON_OBJ := $(patsubst %.c,$(OD)/%.o,$(COMMON_SRC))
 TEST_BINS  := $(patsubst tests/%.c,$(TD)/test-%,$(wildcard tests/*.c))
+SIM_SRC    := src/sim/warden-sim.c src/sim/children.c
 
-# BINS grows in later phases: warden, wardend, warden-sim.
-BINS :=
+# BINS grows in later phases: warden, wardend.
+BINS := $(TD)/warden-sim
 
-.PHONY: all debug ubsan tsan test clean compile
+.PHONY: all debug ubsan tsan test scenario clean compile
 
 all:
 	@$(MAKE) --no-print-directory compile
 
 compile: $(COMMON_OBJ) $(TEST_BINS) $(BINS)
-	@echo "build ok ($(FLAVOR)); phase 0: binaries come with later phases"
+	@echo "build ok ($(FLAVOR))"
 
 debug:
 	@$(MAKE) --no-print-directory FLAVOR=debug compile
