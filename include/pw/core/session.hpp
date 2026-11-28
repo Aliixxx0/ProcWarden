@@ -43,6 +43,7 @@ struct Session {
     DetachPolicy on_detach = DetachPolicy::Keep;
     SessionState state = SessionState::Active;
     bool pausable = false;
+    uint32_t phase_mask = 0;
     uint32_t done_phase_mask = 0;
     std::vector<Member> members;    // full closure (includes escapees)
     std::vector<Member> escapees;   // members whose pgid differs

@@ -21,6 +21,7 @@ struct PwMsg {
     int32_t op;        // Op below
     int32_t client_pid;
     int32_t sess_id;
+    int32_t root_pid;  // launcher: root child pid for REGISTER
     int32_t a;
     int32_t b;
     int64_t c;         // bytes, start-time usec, or plan hash
