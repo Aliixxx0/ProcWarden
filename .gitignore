@@ -1,7 +1,19 @@
 # Build products
 build/
+build*/
+CMakeUserPresets.json
+compile_commands.json
 
+# Local ProcWarden data (storage:"local" projects git-ignore this folder)
+.procwarden/
+
+# graphify
 graphify/
 graphify-out/
+
+# Logs / recordings
+*.log
+eval.csv
+
 # macOS cruft
 .DS_Store

@@ -1,112 +1,91 @@
 # DEVIATIONS
 
-Documented differences between the approved specification and what our
-macOS version actually does, plus the smallest fix we chose. Rule: nothing
-is quietly redesigned; every entry has a repro / test.
+Documented differences between `docs/PROCWARDEN_CPP_PHASES.md` and what this
+macOS machine actually does, plus the smallest fix we chose. Nothing is
+quietly redesigned; every entry names a repro and a test.
+
+Measured limits on the team Macs: `msg_qbytes` = **2048 bytes** and
+`kern.sysv.shmmax` = **4194304 bytes** (4 MB). The status table is ~35 KB.
 
 ---
 
-## DEV-001 — negative `msgtyp` is a bound, not a priority ordering (found in Phase 0)
+## DEV-001 — negative `msgtyp` is a bound, not a priority ordering (Phase 1)
 
-**Spec (docs/BUILD_PROMPT.md, Phase 1):** "The daemon receives with
-`msgrcv(q, &m, SZ, -2, 0)`. A negative `msgtyp` returns the lowest type
-first, so URGENT is always served before NORMAL."
+**Spec (§3.2):** "The daemon reads with `msgrcv(q, &m, SZ, -2, 0)`. Lab 6: a
+negative `msgtyp` returns the lowest type first, so KILL, CANCEL and APPROVE
+are served before NORMAL requests."
 
-**Observed:** On macOS 26.5.2 (Apple clang 17, Xcode CLT), a negative
-`msgtyp` in `msgrcv()` behaves as an *upper bound*, not a sorting rule:
-the call returns the **oldest message whose type ≤ |msgtyp|**, in queue
-arrival order. Repro:
+**Observed:** On macOS 26.5.2 / Apple clang 17, a negative `msgtyp` behaves as
+an **upper bound in FIFO order**: the call returns the *oldest* message whose
+type is `<= |msgtyp|`, not the lowest type. Repro (types 3, 1, 2 sent in that
+order):
 
 ```
-msgsnd types 3, 1, 2  (in that order)
-msgrcv(-3) -> type 3   (arrival order, NOT lowest-first)
+msgrcv(-3) -> type 3
 msgrcv(-3) -> type 1
 msgrcv(-3) -> type 2
 ```
 
-Test: `tests/lab_check.c` → the second Lab 6 message check demonstrates the
-exact two-step behaviour we rely on.
+Test that catches it: `tests/unit/test_os.cpp`, case
+"Lab 6: negative msgtyp serves URGENT before NORMAL" (sends NORMAL then
+URGENT and expects URGENT back).
 
-**Fix (smallest possible):** keep one single queue and negative `msgtyp`
-semantics, but make the daemon do a two-step receive (Phase 1 on):
-
-1. `msgrcv(q, &m, SZ, -1, IPC_NOWAIT)` — if ENOMSG/EAGAIN, fall through;
-   otherwise this is an URGENT request, process it first.
-2. `msgrcv(q, &m, SZ, -2, 0)` (blocking) — receives the oldest NORMAL
-   request (types > 2, i.e. replies addressed to client pids, are
-   excluded by the bound either way).
-
-This preserves the spec's invariant ("URGENT is always served before
-NORMAL") with the same lab mechanism (negative `msgtyp` as a type filter).
-The window in which a URGENT message arrives after the step-1 probe but
-before step-2 completes is at most one serviced request — acceptable, and
-the daemon loop re-probes URGENT every iteration.
+**Fix (smallest possible):** keep one queue and the negative `msgtyp` API, but
+make `MsgQueue::recv()` emulate "lowest type first": when `msgtyp < 0`, probe
+exact types `1..|msgtyp|` with `IPC_NOWAIT`, then fall back to the kernel's
+blocking `msgrcv(msgtyp)`. For the daemon's `-2` this means URGENT (type 1) is
+always drained before NORMAL (type 2). The only window is a URGENT message
+arriving between the probe and the blocking call; the loop re-probes every
+iteration, so the worst case is one NORMAL request served first.
 
 ---
 
-## DEV-002 — ASan hangs and TSan crashes at runtime on macOS 26.5 (found in Phase 0)
+## DEV-002 — ASan hangs and TSan crashes at runtime on macOS 26.5 (Phase 0)
 
-**Spec (CLAUDE.md Code standards):** "`make debug` (ASan + UBSan), `make
-tsan`" must be usable flavors.
+**Spec (§1.3):** presets `debug` (ASan + UBSan), `tsan`, `release`; Phase 1
+"done when the lab-check tests pass under ASan and TSan".
 
-**Observed:** On macOS 26.5.2 / Apple clang 17.0.0 (Command Line Tools,
-ARM64), the sanitizer *runtimes themselves* are broken on this OS/toolchain
-pair — both repro failures occur for trivially small programs:
+**Observed:** both presets **build** cleanly, but the sanitizer runtimes
+themselves are broken on this OS/toolchain pair (Apple clang 17.0.0, arm64):
 
-- ASan: the process hangs during runtime initialization, before `main`:
-  `__asan::AsanInitInternal → InitializeShadowMemory → get_dyld_hdr →
-  dyld_shared_cache_iterate_text_swift`. Repro:
-  `clang -fsanitize=address hello.c` with `int main` returning 0 hangs.
-- TSan: immediate SIGSEGV in the runtime for any program that prints or
-  forks (`clang -fsanitize=thread hello.c` printing "hi" → exit 139).
-- UBSan alone works correctly (recovered us — see below).
+- ASan: hangs during runtime initialization, before `main`
+  (`AsanInitInternal -> InitializeShadowMemory -> get_dyld_hdr`). A
+  hello-world built with `clang++ -fsanitize=address` also hangs.
+- TSan: immediate SIGSEGV (exit 139) for any program, including hello-world.
+- UBSan alone works correctly.
 
-**Fix (smallest possible):** the `debug` target is left exactly as specified
-(ASan + UBSan) so it works unchanged on a Mac with an older toolchain pair;
-a `make ubsan` flavor was added as the sanitizer fallback for this Mac, and
-we run it (+ release, `-Werror`) as our sanitizer gate until the OS or CLT
-fixes the ASan/TSan runtime bug. Nothing in ProcWarden's code is affected;
-the test suite passes under UBSan
-(`make ubsan && ./build/bin-ubsan/test-lab_check`).
+Repro: `python3 -c 'import subprocess; subprocess.run(["build/debug/bin/pw-tests"], timeout=6)'`
+times out; the TSan binary exits with signal 11.
 
-To revisit: when macOS 26.x or the Command Line Tools updates their
-sanitizer runtime, drop `ubsan` from active use and re-enable `debug`/`tsan`
-runs in the phase checklist.
+**Fix (smallest possible):** keep the `debug` and `tsan` presets exactly as
+specified (they work on a Mac with a working sanitizer runtime), and add a
+`ubsan` preset (`-fsanitize=undefined`) as the sanitizer gate for this
+machine. Release (`-Werror`) and UBSan are what we run in the phase checklist;
+revisit when macOS or the Command Line Tools updates its sanitizer runtime.
 
 ---
 
-## DEV-003 — `ps -o rss` under-reports dirty-but-cold memory (found in Phase 2)
+## DEV-003 — `ps` RSS under-reports dirty-but-cold memory (Phase 2/4)
 
-**Spec (docs/BUILD_PROMPT.md, Phase 2):** simulator behaviour is accepted
-"as checked with `ps -o pid,ppid,pgid,rss,command`", implying RSS reflects
-the touched (dirty) memory.
+**Observed:** a process that has dirtied tens of MB (one write per 4096-byte
+page, never freed) can still show an `rss` of a few hundred KB in `ps`. macOS
+compresses dirty pages that are not re-accessed, and compressed pages leave
+the resident set.
 
-**Observed:** On macOS 26.5.2, a child that has dirtied tens of MB (one
-write per 4096-byte page, never freed) still shows an `rss` of only a few
-hundred KB in `ps`. The kernel compresses dirty pages that are not
-re-accessed, and compressed pages leave the resident set. The memory is
-real and is accounted in `ri_phys_footprint` (it includes compressed
-pages), which is exactly why CLAUDE.md Rule 4 fixes footprint as the
-metric and RSS only as the upper bound.
-
-**Fix (smallest possible):** the scenario check uses a modest RSS floor
-(> 300 KB, i.e. "process alive with resident pages") and treats the
-simulator's own per-second pipe reports (self-reported allocated MB) as
-the growth evidence. From Phase 3 on, `proc_pid_rusage(RUSAGE_INFO_V2)`
-gives the true footprint. No redesign; the [footprint, RSS] range
-showing the gap is itself a teaching point of the proposal.
+**Consequence:** RSS is only an upper bound for what a workload really holds.
+The sampler therefore uses `ri_phys_footprint` from
+`proc_pid_rusage(RUSAGE_INFO_V2)` as the primary metric (it includes
+compressed pages), and publishes `rss` alongside it. The
+`[footprint, RSS]` range is itself a teaching point in the proposal.
 
 ---
 
+## DEV-004 — cache paths must be verified per machine (Phase 11)
 
-On the team Macs: `msg_qbytes` = **2048 bytes**, so with our ≤ 256-byte
-messages roughly 8 messages can be in flight; `kern.sysv.shmmax` =
-**4194304 bytes** (4 MB), so the status table (Phase 1) must stay well
-under that — it does, by design (< 1 MB).
-
-## Side notes on System V limits (Rule 4, measured in Phase 0)
-
-On the team Macs: `msg_qbytes` = **2048 bytes**, so with our ≤ 256-byte
-messages roughly 8 messages can be in flight; `kern.sysv.shmmax` =
-**4194304 bytes** (4 MB), so the status table (Phase 1) fits comfortably
-(it is 47,720 bytes).
+The brief lists npm (`~/.npm/_cacache`), pnpm (from `pnpm store path`), bun
+(`~/.bun/install/cache`) and Biome cache/log paths. On the lab Macs only some
+of these exist. The planner records the *measured* size of each path and the
+cleaner uses the tool's own command when present (`npm cache clean --force`,
+`pnpm store prune`, `bun pm cache rm`); a missing path is reported as
+`bytes: 0` and never invented. Paths are checked with `realpath` and must stay
+inside `$HOME`.
