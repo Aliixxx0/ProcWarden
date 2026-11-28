@@ -5,9 +5,9 @@
 #include <vector>
 
 #include "pw/config.hpp"
-#include "pw/ipc/msgq.hpp"
 #include "pw/ipc/protocol.hpp"
 #include "pw/ipc/status_table.hpp"
+#include "pw/os/msgq.hpp"
 #include "pw/os/shm.hpp"
 
 namespace pw {
@@ -34,6 +34,7 @@ struct Client {
 std::string fmt_bytes(uint64_t bytes);
 std::string fmt_gb(uint64_t bytes);
 std::string hash_hex(uint64_t hash);
+void cli_sleep_ms(int ms);
 std::string status_to_json(const StatusTable& t);
 void draw_dashboard(const StatusTable& t);
 void print_status_line(const StatusTable& t);

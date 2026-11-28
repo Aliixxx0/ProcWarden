@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "cli.hpp"
+#include "pw/core/snapshot.hpp"
 
 namespace pw {
 namespace {

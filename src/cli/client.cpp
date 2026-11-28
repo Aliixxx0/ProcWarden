@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -88,6 +89,15 @@ bool Client::refresh(StatusTable& out) const {
     if (table == nullptr) return false;
     if (!status_copy(table, &out)) return false;
     return out.header.magic == kStatusMagic && out.header.version == kStatusVersion;
+}
+
+void cli_sleep_ms(int ms) {
+    if (ms <= 0) return;
+    struct timespec ts {};
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = static_cast<long>(ms % 1000) * 1000000L;
+    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {
+    }
 }
 
 std::string fmt_bytes(uint64_t bytes) {
