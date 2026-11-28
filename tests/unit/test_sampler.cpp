@@ -1,12 +1,15 @@
 #include "doctest.h"
 
 #include <unistd.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <filesystem>
 #include <fstream>
 
 #include "pw/os/fsize.hpp"
 #include "pw/os/mem.hpp"
+#include "pw/os/ports.hpp"
 #include "pw/os/proc.hpp"
 
 TEST_CASE("snapshot contains this process with a start time") {
@@ -93,4 +96,33 @@ TEST_CASE("dir_size sums regular files") {
     CHECK(r.value() == 350);
 
     std::filesystem::remove_all(root);
+}
+
+TEST_CASE("listening_ports finds our listening socket") {
+    const int fd = socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(fd >= 0);
+
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    struct sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    REQUIRE(bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0);
+    REQUIRE(listen(fd, 1) == 0);
+
+    socklen_t len = sizeof(addr);
+    REQUIRE(getsockname(fd, reinterpret_cast<struct sockaddr*>(&addr), &len) == 0);
+    const uint16_t port = ntohs(addr.sin_port);
+    REQUIRE(port != 0);
+
+    auto r = pw::listening_ports();
+    REQUIRE(r.ok());
+    bool found = false;
+    for (const auto& p : r.value())
+        if (p.port == port && p.pid == getpid()) found = true;
+    CHECK(found);
+
+    close(fd);
 }
